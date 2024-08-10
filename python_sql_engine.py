@@ -1,7 +1,7 @@
 """Python SQL engine
 
 This script contains four functions which correspond respectively to WHERE, INNER JOIN, GROUP BY,ORDER BY in SQL
-All the three functions are generic & abstract methods which are intended to be generalized on all sql queries
+All the four functions are abstract methods which are generalized on all sql queries
 """
 import csv
 from collections import defaultdict
