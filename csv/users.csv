@@ -1,0 +1,10 @@
+user_id,name,is_member,country
+1,George,True,FR
+2,Lily,True,DE
+3,David,False,FR
+4,Kevin,True,SZ
+5,Rob,False,DE
+6,Sam,True,FR
+7,Maxime,True,DE
+8,Alice,False,SZ
+9,Charlotte,True,SZ
