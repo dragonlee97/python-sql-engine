@@ -29,30 +29,71 @@ def read_with_where_filter(path: str, name: str, filters: dict = {}) -> list:
     return results
 
 
-def inner_hash_join(left: list, right: list, join_key: str) -> list:
+def concat_col_names_add_suffix(left_cols, right_cols, left_join_key, right_join_key):
+    """
+    This funcion also rename the overlapped join_key in the result set, with '_left' and '_right' suffix
+    """
+    left_cols_key_suffix = [col + "_left" if col == left_join_key else col for col in left_cols]
+    right_cols_key_suffix = [col + "_right" if col == right_join_key else col for col in right_cols]
+    return left_cols_key_suffix + right_cols_key_suffix
+
+def inner_hash_join(left: list, right: list, left_join_key: str, right_join_key: str) -> list:
     """
     Inner join two tables: left and right using hash join. Hashing is applied to the right table. Put bigger table on the left and the smaller one on the right.
     This funcion also rename the overlapped join_key in the result set, with '_left' and '_right' suffix
     :param left (list): left table to join
     :param right (list): right table to join (hash)
-    :param join_key (string): common key to join on in the two tables
+    :param left_join_key (string): joined key of the left table
+    :param right_join_key (string): joined key of the right table
     :return (list): joined data in the format of list of namedtuples
     """
     results = []
     right_index = {
         key: list(value)
-        for key, value in groupby(sorted(right, key=attrgetter(join_key)), lambda x: getattr(x, join_key),)
+        for key, value in groupby(right, lambda x: getattr(x, right_join_key))
     }
-    left_cols_key_prefix = [col + "_left" if col == join_key else col for col in left[0]._fields]
-    right_cols_key_perfix = [col + "_right" if col == join_key else col for col in right[0]._fields]
-    results_col = left_cols_key_prefix + right_cols_key_perfix
-    results_entity = namedtuple("join_results", results_col)
+    results_cols = concat_col_names_add_suffix(left[0]._fields, right[0]._fields, left_join_key, right_join_key)
+    results_entity = namedtuple("join_results", results_cols)
     for row_left in left:
-        right_matches = right_index.get(getattr(row_left, join_key))
+        right_matches = right_index.get(getattr(row_left, left_join_key))
         if right_matches:
             results.extend([results_entity(*row_left, *row_right) for row_right in right_matches])
     return results
 
+
+def merge_join(left: list, right: list, left_join_key: str, right_join_key: str) -> list:
+    """
+    Merge join two tables: Sort the two tables by their keys first and loop the sorted table together
+    :param left (list): left table to join
+    :param right (list): right table to join (hash)
+    :param left_join_key (string): joined key of the left table
+    :param right_join_key (string): joined key of the right table
+    :return (list): joined data in the format of list of namedtuples
+    """
+    results = []
+    i, j = 0, 0
+    left = sorted(left, key=lambda x: getattr(x, left_join_key))
+    right = sorted(right, key=lambda x: getattr(x, right_join_key))
+    results_cols = concat_col_names_add_suffix(left[0]._fields, right[0]._fields, left_join_key, right_join_key)
+    results_entity = namedtuple("join_results", results_cols)
+    while i < len(left) and j < len(right):
+        left_key_value = getattr(left[i], left_join_key)
+        right_key_value = getattr(right[j], right_join_key)
+        if left_key_value < right_key_value:
+            i += 1
+        elif left_key_value > right_key_value:
+            j += 1
+        else:
+            temp_i, temp_j = i, j
+            while temp_i < len(left) and getattr(left[temp_i], left_join_key) == left_key_value:
+                temp_j = j
+                while temp_j < len(right) and getattr(right[temp_j], right_join_key) == right_key_value:
+                    results.append(results_entity(*left[temp_i], *right[temp_j]))
+                    temp_j += 1
+                temp_i += 1
+            i, j = temp_i, temp_j
+    return results
+            
 
 def group_by(data: list, group_key: str, aggregation_cols: list[str]) -> dict:
     """
@@ -84,8 +125,9 @@ if __name__ == "__main__":
     billed_orders = read_with_where_filter("csv/orders.csv", "order", {"is_billed": "True"})
     member_users = read_with_where_filter("csv/users.csv", "user", {"is_member": "True"})
 
-    # inner join to keep only the orders of memebers, indexing user_id for linear complexity
-    member_user_orders = inner_hash_join(billed_orders, member_users, "user_id")
+    # inner join (either hash join or merge join) to keep only the orders of memebers, indexing user_id for linear complexity
+    member_user_orders = inner_hash_join(billed_orders, member_users, "user_id", "user_id")
+    # member_user_orders = merge_join(billed_orders, member_users, "user_id", "user_id")
 
     # group by data using a default dictionary. The key is country code, the values are corresponding list of values
     country_orders = group_by(member_user_orders, "country", ["amount", "is_shipped"])
